@@ -8,7 +8,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.freetuner.app"
+        applicationId = "com.rstudio.freetuner"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
