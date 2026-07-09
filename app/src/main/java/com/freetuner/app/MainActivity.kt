@@ -1,10 +1,13 @@
 package com.freetuner.app
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.animateColorAsState
@@ -1422,6 +1425,18 @@ private fun SettingsScreen(
     onLeftHandedChanged: (Boolean) -> Unit,
 ) {
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    var showDonationPrompt by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences(DonationPrefsName, Context.MODE_PRIVATE)
+        val lastShownMillis = prefs.getLong(KeyDonationLastShownMillis, 0L)
+        val now = System.currentTimeMillis()
+        if (now - lastShownMillis >= DonationPromptIntervalMillis) {
+            showDonationPrompt = true
+            prefs.edit().putLong(KeyDonationLastShownMillis, now).apply()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -1478,7 +1493,35 @@ private fun SettingsScreen(
             },
         )
     }
+
+    if (showDonationPrompt) {
+        AlertDialog(
+            onDismissRequest = { showDonationPrompt = false },
+            title = { Text("Enjoying FreeTuner?") },
+            text = {
+                Text("FreeTuner is free, offline, and ad-free. If it's useful to you, consider supporting development with a small donation.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DonationUrl)))
+                    showDonationPrompt = false
+                }) {
+                    Text("Support on Ko-fi")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showDonationPrompt = false }) {
+                    Text("Maybe later")
+                }
+            },
+        )
+    }
 }
+
+private const val DonationPrefsName = "freetuner_donation_prefs"
+private const val KeyDonationLastShownMillis = "last_shown_millis"
+private const val DonationPromptIntervalMillis = 30L * 24 * 60 * 60 * 1000
+private const val DonationUrl = "https://ko-fi.com/freetuner"
 
 @Composable
 private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
