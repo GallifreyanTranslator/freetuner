@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FreeTuner</string>
+    <string name="about_title">About FreeTuner</string>
+    <string name="about_message">FreeTuner is an offline-ready instrument tuner with a live chromatic dashboard, transpose helper, metronome, and practice tools. It uses the microphone only for pitch detection.</string>
+</resources>

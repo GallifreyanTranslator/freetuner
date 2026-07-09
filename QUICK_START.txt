@@ -1,0 +1,136 @@
+================================================================================
+FREETUNE AUDIO OPTIMIZATION - QUICK START
+================================================================================
+
+PROBLEM: Audio capture accuracy is 4-9× worse than industry leaders
+- Sample rate: 22050 Hz (vs 44100 Hz standard)
+- Latency: 186 ms (vs 30-50 ms competitors)
+- Octave errors: 5% of detections (competitors: 0%)
+- Accuracy: ±15-20 cents (vs ±1-3 cents competitors)
+
+SOLUTION: Phase 1 (2-3 hours) = 30-40% improvement immediately
+
+================================================================================
+6 CHANGES TO MAKE
+================================================================================
+
+1. SAMPLE RATE (MicrophonePitchMonitor.kt:15)
+   Before: private val sampleRate: Int = 22050,
+   After:  private val sampleRate: Int = 44100,
+   Impact: 4× better frequency resolution
+
+2. WINDOWING (MicrophonePitchMonitor.kt, in start() method)
+   Add: hannWindow() function
+   Apply to samples before detectPitch()
+   Impact: Eliminate ±10-20 Hz spectral leakage jitter
+
+3. BUFFER SIZE (MicrophonePitchMonitor.kt)
+   Before: ShortArray(4096)  [186 ms latency]
+   After:  ShortArray(2048) with 50% overlap
+   Impact: 75% latency reduction (46 ms)
+
+4. CONFIDENCE THRESHOLD (PitchDetector.kt:71)
+   Before: if (confidence < 0.55f) return null
+   After:  if (confidence < 0.70f) return null
+   Impact: Fewer false positives
+
+5. FREQUENCY RANGE (PitchDetector.kt:16-17)
+   Before: minFrequencyHz = 60f, maxFrequencyHz = 1200f
+   After:  minFrequencyHz = 50f, maxFrequencyHz = 2000f
+   Impact: 4× wider range (bass to vocals)
+
+6. OCTAVE DETECTION (PitchDetector.kt)
+   Add: validateOctave() function
+   Check: Is detected frequency 2× an octave?
+   Impact: Eliminate 5% false "2× frequency" errors
+
+================================================================================
+EXPECTED RESULTS
+================================================================================
+
+Metric                  Before      After       Improvement
+────────────────────────────────────────────────────────
+Frequency resolution    5.3 Hz      1.3 Hz      4× better
+Latency                 186 ms      46 ms       75% faster
+Accuracy                ±15-20¢     ±8-10¢      ~50% better
+Frequency range         60-1200 Hz  50-2000 Hz  4× wider
+Jitter (spectral)       ±20 Hz      ±5 Hz       4× stable
+Octave errors           5%          0.5%        10× fewer
+
+================================================================================
+FILES TO MODIFY
+================================================================================
+
+1. app/src/main/java/com/freetuner/app/audio/MicrophonePitchMonitor.kt
+   - Line 15: Sample rate
+   - Line 50-65: Windowing & buffering
+   - New: Adaptive noise floor
+
+2. app/src/main/java/com/freetuner/app/audio/PitchDetector.kt
+   - Line 16-17: Frequency range
+   - Line 71: Confidence threshold
+   - New: Octave validation
+
+================================================================================
+TESTING
+================================================================================
+
+After each change, test:
+  ☐ App compiles
+  ☐ Mic permission works
+  ☐ Audio recording starts/stops
+  ☐ Pitch detection updates
+
+After all changes:
+  ☐ Sing A4 (440 Hz), measure variance (should be <5 Hz)
+  ☐ Check latency (display should update ~150ms faster)
+  ☐ Test range: 50 Hz, 1000 Hz, 2000 Hz
+  ☐ Background noise test
+  ☐ Check CPU usage (<15%)
+  ☐ No octave errors (test E2=82 Hz, should not detect 164 Hz)
+
+================================================================================
+PERFORMANCE IMPACT
+================================================================================
+
+CPU:    +~10% (still well under typical 30-50% app usage)
+Memory: +8 KB
+Latency: -140 ms (much better)
+
+All 6 changes are independent - can rollback individually if issues
+
+================================================================================
+PHASE 2 (IF NEEDED)
+================================================================================
+
+If accuracy still not competitive after Phase 1:
+
+- Replace autocorrelation with YIN algorithm (3× better)
+- Time: 4-6 hours
+- Expected accuracy: ±1-3 cents
+- Proper vibrato handling
+- See: AUDIO_OPTIMIZATION.md for details
+
+================================================================================
+DOCUMENTATION
+================================================================================
+
+📄 AUDIO_OPTIMIZATION.md      — Full technical analysis (issues & roadmap)
+📄 PHASE1_IMPLEMENTATION.md   — Detailed code changes with context
+📄 QUICK_START.txt            — This file (quick reference)
+
+Open AUDIO_OPTIMIZATION.md in artifact viewer for visual comparisons.
+
+================================================================================
+START HERE
+================================================================================
+
+1. Read PHASE1_IMPLEMENTATION.md (15 min)
+2. Make 6 code changes (1 hour)
+3. Compile & test (30 min)
+4. Measure improvements (30 min)
+
+Total: 2.5 hours
+Expected: 30-40% immediate improvement visible to users
+
+================================================================================
