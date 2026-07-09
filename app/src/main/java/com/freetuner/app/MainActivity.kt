@@ -1110,7 +1110,6 @@ private fun ToolsScreen(
                         FeatureChip(label = "Tuning fork")
                         FeatureChip(label = "Transpose")
                         FeatureChip(label = "Reference tone")
-                        FeatureChip(label = "Chord recognizer")
                     }
                     Button(modifier = Modifier.fillMaxWidth(), onClick = { showForkDialog = true }) {
                         Text("Open tuning fork")
