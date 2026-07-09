@@ -78,6 +78,15 @@ def get_service():
     return build("androidpublisher", "v3", credentials=creds)
 
 
+def update_details(service, edit_id):
+    """Ensure defaultLanguage matches LANGUAGE without clobbering contact info."""
+    current = service.edits().details().get(packageName=PACKAGE_NAME, editId=edit_id).execute()
+    if current.get("defaultLanguage") != LANGUAGE:
+        current["defaultLanguage"] = LANGUAGE
+        service.edits().details().update(packageName=PACKAGE_NAME, editId=edit_id, body=current).execute()
+        print(f"Default language corrected to {LANGUAGE}.")
+
+
 def update_listing(service, edit_id):
     service.edits().listings().update(
         packageName=PACKAGE_NAME,
@@ -164,6 +173,7 @@ def main():
 
     try:
         if not args.skip_listing:
+            update_details(service, edit_id)
             update_listing(service, edit_id)
         if not args.skip_images:
             upload_images(service, edit_id)
