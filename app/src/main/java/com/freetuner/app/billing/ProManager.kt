@@ -93,9 +93,9 @@ class ProManager(context: Context) : PurchasesUpdatedListener {
             .build()
         billing.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(listOf(product)).build(),
-        ) { result, productDetailsList ->
+        ) { result, productDetailsResult ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                details = productDetailsList.firstOrNull()
+                details = productDetailsResult.productDetailsList.firstOrNull()
                 _price.value = details?.oneTimePurchaseOfferDetails?.formattedPrice
             }
         }
