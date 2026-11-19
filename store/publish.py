@@ -27,7 +27,7 @@ STORE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = STORE_DIR / "assets"
 DEFAULT_AAB = STORE_DIR.parent / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
 
-TITLE = "FreeTuner: Instrument Tuner"
+TITLE = "Tuner: Instrument Tuner"
 SHORT_DESCRIPTION = "Precise chromatic tuner, metronome, and chord recognizer — fast, offline, free."
 FULL_DESCRIPTION = """FreeTuner is a fast, accurate, offline instrument tuner for guitar, bass, ukulele, violin, viola, cello, mandolin, banjo, and any chromatic instrument.
 
@@ -52,10 +52,15 @@ TOOLS
 • Tuning fork with adjustable note and octave
 • Transpose helper for transposing instruments (clarinet, saxophone, trumpet, etc.)
 
+FREE, WITH AN OPTIONAL PRO UPGRADE
+• The tuner, metronome, chord recognizer and all standard tunings are free, with no ads
+• FreeTuner Pro is a one-time purchase (no subscription) that unlocks extra tunings: half step down, full step down, Drop C, Open D, Open E, 7-string guitar, baritone, 5-string bass, Drop D bass, baritone and low-G ukulele, Double C banjo
+• Pro also lets you save your own custom tunings
+
 PRIVACY-FIRST
-• Works fully offline — no internet connection required or used
+• Tuning works fully offline — no internet connection needed (only the optional Pro purchase talks to Google Play)
 • Microphone audio is processed on-device only and is never recorded, stored, or transmitted
-• No accounts, no ads, no analytics
+• No accounts, no ads, no analytics, no tracking
 
 Whether you're warming up before a gig, teaching a lesson, or just keeping your practice room in tune, FreeTuner gives you a clean, distraction-free toolkit built for musicians."""
 

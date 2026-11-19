@@ -1,7 +1,7 @@
 # Play Store listing copy — FreeTuner
 
 ## Suggested title (30 char max)
-FreeTuner: Instrument Tuner
+Tuner: Instrument Tuner
 
 (Plain "FreeTuner" is fine too, but a qualifier helps search discovery — Play titles are unique per your account, not globally, so either works.)
 
@@ -34,10 +34,15 @@ TOOLS
 • Tuning fork with adjustable note and octave
 • Transpose helper for transposing instruments (clarinet, saxophone, trumpet, etc.)
 
+FREE, WITH AN OPTIONAL PRO UPGRADE
+• The tuner, metronome, chord recognizer and all standard tunings are free, with no ads
+• FreeTuner Pro is a one-time purchase (no subscription) that unlocks extra tunings: half step down, full step down, Drop C, Open D, Open E, 7-string guitar, baritone, 5-string bass, Drop D bass, baritone and low-G ukulele, Double C banjo
+• Pro also lets you save your own custom tunings
+
 PRIVACY-FIRST
-• Works fully offline — no internet connection required or used
+• Tuning works fully offline — no internet connection needed (only the optional Pro purchase talks to Google Play)
 • Microphone audio is processed on-device only and is never recorded, stored, or transmitted
-• No accounts, no ads, no analytics
+• No accounts, no ads, no analytics, no tracking
 
 Whether you're warming up before a gig, teaching a lesson, or just keeping your practice room in tune, FreeTuner gives you a clean, distraction-free toolkit built for musicians.
 
@@ -45,7 +50,7 @@ Whether you're warming up before a gig, teaching a lesson, or just keeping your 
 Music & Audio
 
 ## Content rating
-Everyone (no user-generated content, no ads, no in-app purchases)
+Everyone (no user-generated content, no ads; one optional in-app purchase: FreeTuner Pro)
 
 ## Contact email
 rperko28@gmail.com

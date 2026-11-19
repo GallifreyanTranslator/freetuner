@@ -6,6 +6,9 @@ import android.graphics.Paint
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
@@ -48,7 +51,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -56,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -87,6 +93,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.freetuner.app.audio.AdvancedMicrophonePitchMonitor
+import com.freetuner.app.billing.ProManager
 import com.freetuner.app.audio.ChordDetectionResult
 import com.freetuner.app.audio.ChordDetector
 import com.freetuner.app.audio.ChordTemplates
@@ -143,7 +150,7 @@ data class InstrumentPreset(
     val description: String,
 )
 
-private val presets = listOf(
+internal val freePresets = listOf(
     InstrumentPreset("Guitar", "Standard", listOf("E2", "A2", "D3", "G3", "B3", "E4"), "Six-string standard tuning"),
     InstrumentPreset("Guitar", "Drop D", listOf("D2", "A2", "D3", "G3", "B3", "E4"), "Fast rock retune"),
     InstrumentPreset("Guitar", "Open G", listOf("D2", "G2", "D3", "G3", "B3", "D4"), "Open slide setup"),
@@ -167,6 +174,23 @@ fun FreeTunerApp() {
     var noiseFilter by rememberSaveable { mutableStateOf(true) }
     var leftHanded by rememberSaveable { mutableStateOf(false) }
     var transposeSteps by rememberSaveable { mutableIntStateOf(0) }
+
+    val appContext = LocalContext.current
+    val proManager = remember { ProManager(appContext) }
+    DisposableEffect(proManager) {
+        proManager.connect()
+        onDispose { proManager.disconnect() }
+    }
+    val isPro by proManager.isPro.collectAsState()
+    val proPrice by proManager.price.collectAsState()
+    val proMessage by proManager.message.collectAsState()
+    val proUi = ProUi(
+        isPro = isPro,
+        price = proPrice,
+        message = proMessage,
+        onBuy = { appContext.findActivity()?.let { proManager.buy(it) } },
+        onRestore = { proManager.restore() },
+    )
 
     MaterialTheme(
         colorScheme = if (darkTheme) {
@@ -223,6 +247,7 @@ fun FreeTunerApp() {
             ) {
                 when (selectedTab) {
                     FreeTunerTab.Tuner -> TunerScreen(
+                        pro = proUi,
                         noiseFilter = noiseFilter,
                         transposeSteps = transposeSteps,
                     )
@@ -232,6 +257,7 @@ fun FreeTunerApp() {
                         onTransposeChange = { transposeSteps = it },
                     )
                     FreeTunerTab.Settings -> SettingsScreen(
+                        pro = proUi,
                         darkTheme = darkTheme,
                         haptics = haptics,
                         noiseFilter = noiseFilter,
@@ -249,6 +275,7 @@ fun FreeTunerApp() {
 
 @Composable
 private fun TunerScreen(
+    pro: ProUi,
     noiseFilter: Boolean,
     transposeSteps: Int,
 ) {
@@ -308,6 +335,29 @@ private fun TunerScreen(
         onDispose {
             lifecycleScope.launch { monitor.stop() }
         }
+    }
+
+    val tuningPrefs = remember { context.getSharedPreferences("freetuner_tunings", Context.MODE_PRIVATE) }
+    var customTunings by remember { mutableStateOf(Tunings.decode(tuningPrefs.getString("custom", "") ?: "")) }
+    val availablePresets = freePresets + Tunings.pro + (if (pro.isPro) customTunings else emptyList())
+    val proStart = freePresets.size
+    val proEnd = freePresets.size + Tunings.pro.size
+    var presetIndex by rememberSaveable { mutableIntStateOf(0) }
+    var stringIndex by rememberSaveable { mutableIntStateOf(0) }
+    var showProDialog by rememberSaveable { mutableStateOf(false) }
+    var showCustomDialog by rememberSaveable { mutableStateOf(false) }
+    var tonePlaying by rememberSaveable { mutableStateOf(false) }
+    val tonePlayer = remember { ReferenceTonePlayer() }
+    val activePresetIndex = presetIndex.coerceIn(0, availablePresets.lastIndex)
+    val activePreset = availablePresets[activePresetIndex]
+    val activeStringIndex = stringIndex.coerceIn(0, (activePreset.strings.size - 1).coerceAtLeast(0))
+    val targetString = activePreset.strings.getOrNull(activeStringIndex) ?: ""
+    val targetFrequencyHz = if (targetString.isNotEmpty()) PitchMath.frequencyForNoteName(targetString, referenceA4Hz) else 0f
+    DisposableEffect(Unit) {
+        onDispose { tonePlayer.stop() }
+    }
+    LaunchedEffect(tonePlaying, targetFrequencyHz) {
+        if (tonePlaying && targetFrequencyHz > 0f) tonePlayer.playTone(targetFrequencyHz.toDouble()) else tonePlayer.stop()
     }
 
     val transposeRatio = 2f.pow(transposeSteps / 12f)
@@ -373,6 +423,41 @@ private fun TunerScreen(
             }
         }
 
+        InstrumentCard(
+            presets = availablePresets,
+            lockedRange = if (pro.isPro) IntRange.EMPTY else proStart until proEnd,
+            preset = activePreset,
+            presetIndex = activePresetIndex,
+            stringIndex = activeStringIndex,
+            onPresetSelect = { index ->
+                if (index in proStart until proEnd && !pro.isPro) {
+                    showProDialog = true
+                } else {
+                    presetIndex = index
+                    stringIndex = 0
+                    tonePlaying = false
+                }
+            },
+            onStringSelect = { stringIndex = it },
+            targetString = targetString,
+            targetFrequencyHz = targetFrequencyHz,
+            tonePlaying = tonePlaying,
+            onToggleTone = { tonePlaying = !tonePlaying },
+            onAddCustom = { if (pro.isPro) showCustomDialog = true else showProDialog = true },
+            onDeleteCustom = if (activePreset.name == Tunings.CUSTOM_NAME) {
+                {
+                    val updated = customTunings.filterIndexed { i, _ -> i != activePresetIndex - proEnd }
+                    customTunings = updated
+                    tuningPrefs.edit().putString("custom", Tunings.encode(updated)).apply()
+                    presetIndex = 0
+                    stringIndex = 0
+                    tonePlaying = false
+                }
+            } else {
+                null
+            },
+        )
+
         CalibrationCard(
             referenceA4Hz = referenceA4Hz,
             onReferenceChange = { referenceA4Hz = it },
@@ -403,6 +488,24 @@ private fun TunerScreen(
                 color = if (microphoneGranted) AccentRed else AccentBlue,
             )
         }
+    }
+
+    if (showProDialog && !pro.isPro) {
+        ProDialog(pro = pro, onDismiss = { showProDialog = false })
+    }
+    if (showCustomDialog) {
+        CustomTuningDialog(
+            onDismiss = { showCustomDialog = false },
+            onSave = { name, notes ->
+                val updated = customTunings + Tunings.custom(name, notes)
+                customTunings = updated
+                tuningPrefs.edit().putString("custom", Tunings.encode(updated)).apply()
+                presetIndex = proEnd + updated.size - 1
+                stringIndex = 0
+                tonePlaying = false
+                showCustomDialog = false
+            },
+        )
     }
 }
 
@@ -860,6 +963,8 @@ private fun MicrophoneCard(
 
 @Composable
 private fun InstrumentCard(
+    presets: List<InstrumentPreset>,
+    lockedRange: IntRange,
     preset: InstrumentPreset,
     presetIndex: Int,
     stringIndex: Int,
@@ -869,6 +974,8 @@ private fun InstrumentCard(
     targetFrequencyHz: Float,
     tonePlaying: Boolean,
     onToggleTone: () -> Unit,
+    onAddCustom: () -> Unit,
+    onDeleteCustom: (() -> Unit)?,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -876,8 +983,8 @@ private fun InstrumentCard(
         shape = RoundedCornerShape(24.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Instrument and retune", style = MaterialTheme.typography.titleMedium)
-            Text("${preset.name} • ${preset.tuningLabel}")
+            Text("Instrument and tuning", style = MaterialTheme.typography.titleMedium)
+            Text("${preset.name} \u2022 ${preset.tuningLabel}")
             Text(preset.description, style = MaterialTheme.typography.bodySmall)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -891,8 +998,14 @@ private fun InstrumentCard(
                             containerColor = if (selected) AccentGreen.copy(alpha = 0.3f) else Color.DarkGray,
                         ),
                     ) {
-                        Text(if (item.name == "Guitar") item.tuningLabel else item.name)
+                        Text(presetChipLabel(item, index in lockedRange))
                     }
+                }
+                Button(
+                    onClick = onAddCustom,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                ) {
+                    Text("+ Custom")
                 }
             }
             if (preset.strings.isNotEmpty()) {
@@ -912,17 +1025,139 @@ private fun InstrumentCard(
                         }
                     }
                 }
+                HorizontalDivider()
+                Text("Target string: ${PitchMath.prettyNoteName(targetString)}")
+                Text("Target frequency: ${String.format("%.1f", targetFrequencyHz)} Hz")
+                Button(onClick = onToggleTone) {
+                    Text(if (tonePlaying) "Stop reference tone" else "Play reference tone")
+                }
+            } else {
+                Text("Chromatic mode: play any note and the dial shows how far off it is.", style = MaterialTheme.typography.bodySmall)
             }
-            HorizontalDivider()
-            Text("Target string: ${PitchMath.prettyNoteName(targetString)}")
-            Text("Target frequency: ${String.format("%.1f", targetFrequencyHz)} Hz")
-            Button(onClick = onToggleTone) {
-                Text(if (tonePlaying) "Stop reference tone" else "Play reference tone")
+            if (onDeleteCustom != null) {
+                TextButton(onClick = onDeleteCustom) {
+                    Text("Delete this custom tuning")
+                }
             }
         }
     }
 }
 
+private fun presetChipLabel(item: InstrumentPreset, locked: Boolean): String {
+    val base = when {
+        item.name == "Guitar" || item.name == Tunings.CUSTOM_NAME -> item.tuningLabel
+        item.tuningLabel == "Standard" || item.tuningLabel == "Any note" || (item.name == "Banjo" && item.tuningLabel == "Open G") -> item.name
+        else -> "${item.name} ${item.tuningLabel}"
+    }
+    return if (locked) "\uD83D\uDD12 $base" else base
+}
+
+@Composable
+private fun CustomTuningDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, List<String>) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var notes by rememberSaveable { mutableStateOf("") }
+    val parsed = Tunings.parseNotes(notes)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom tuning") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(20) },
+                    label = { Text("Name") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes, low to high") },
+                    placeholder = { Text("D2 A2 D3 G3 B3 E4") },
+                    singleLine = true,
+                    isError = notes.isNotBlank() && parsed == null,
+                )
+                Text(
+                    if (notes.isBlank() || parsed != null) {
+                        "Note name plus octave, separated by spaces. Sharps with #, flats with b."
+                    } else {
+                        "Not recognised. Example: D2 A2 D3 G3 B3 E4"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            Button(enabled = parsed != null, onClick = { onSave(name, parsed.orEmpty()) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+internal class ProUi(
+    val isPro: Boolean,
+    val price: String?,
+    val message: String?,
+    val onBuy: () -> Unit,
+    val onRestore: () -> Unit,
+)
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+@Composable
+private fun ProCard(pro: ProUi) {
+    Card(colors = CardDefaults.cardColors(containerColor = CardBackground), shape = RoundedCornerShape(24.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("FreeTuner Pro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (pro.isPro) {
+                Text("Thank you for supporting FreeTuner. Extra tunings and custom tunings are unlocked.")
+            } else {
+                Text(
+                    "The tuner, metronome and chord recognizer stay free, with no ads. Pro is a one-time purchase " +
+                        "that adds extra tunings (half step down, Drop C, open tunings, 7-string guitar, 5-string bass " +
+                        "and more) and lets you save your own custom tunings.",
+                )
+                Button(modifier = Modifier.fillMaxWidth(), onClick = pro.onBuy) {
+                    Text(if (pro.price != null) "Unlock Pro \u2013 ${pro.price}" else "Unlock Pro")
+                }
+                TextButton(onClick = pro.onRestore) { Text("Restore purchase") }
+                pro.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProDialog(pro: ProUi, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("FreeTuner Pro") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Unlock extra tunings and save your own custom tunings. One-time purchase: no subscription, no ads.")
+                pro.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            Button(onClick = pro.onBuy) {
+                Text(if (pro.price != null) "Unlock \u2013 ${pro.price}" else "Unlock Pro")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Not now") }
+        },
+    )
+}
 @Composable
 private fun CalibrationCard(
     referenceA4Hz: Float,
@@ -1411,6 +1646,7 @@ private fun NoteChoiceButton(
 
 @Composable
 private fun SettingsScreen(
+    pro: ProUi,
     darkTheme: Boolean,
     haptics: Boolean,
     noiseFilter: Boolean,
@@ -1429,6 +1665,8 @@ private fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        ProCard(pro)
+
         Card(colors = CardDefaults.cardColors(containerColor = CardBackground), shape = RoundedCornerShape(24.dp)) {
             Box(
                 modifier = Modifier
