@@ -1,13 +1,10 @@
 package com.freetuner.app
 
 import android.Manifest
-import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.media.AudioManager
 import android.media.ToneGenerator
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.animateColorAsState
@@ -87,6 +84,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.freetuner.app.audio.AdvancedMicrophonePitchMonitor
 import com.freetuner.app.audio.ChordDetectionResult
 import com.freetuner.app.audio.ChordDetector
@@ -95,7 +94,6 @@ import com.freetuner.app.audio.PitchDetectionResult
 import com.freetuner.app.audio.PitchDetector
 import com.freetuner.app.audio.PitchMath
 import com.freetuner.app.audio.ReferenceTonePlayer
-import com.freetuner.app.audio.YinPitchDetector
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -256,6 +254,7 @@ private fun TunerScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val lifecycleScope = LocalLifecycleOwner.current.lifecycleScope
     val monitor = remember {
         AdvancedMicrophonePitchMonitor(
             algorithm = AdvancedMicrophonePitchMonitor.PitchDetectionAlgorithm.PHASE2_YIN
@@ -294,16 +293,12 @@ private fun TunerScreen(
                 pitchResult = result
                 if (filtered != null) {
                     lostSignalFrames = 0
-                    stableFrequencyHz = YinPitchDetector.smoothFrequencyWithVibrato(
-                        previousHz = stableFrequencyHz.takeIf { current -> current > 0f },
-                        newHz = filtered.frequencyHz,
-                        vibratoDetected = false,
-                        factor = 0.3f,
-                    )
+                    // The monitor already smooths; smoothing again only added lag.
+                    stableFrequencyHz = filtered.frequencyHz
                     pitchHistory = (pitchHistory + PitchMath.centsOffFromNearest(filtered.frequencyHz, currentReferenceA4Hz)).takeLast(60)
                 } else {
                     lostSignalFrames += 1
-                    if (lostSignalFrames >= 2) {
+                    if (lostSignalFrames >= 8) { // ~0.35 s hold so decaying notes do not snap the needle to centre
                         stableFrequencyHz = 0f
                         pitchHistory = (pitchHistory + 0).takeLast(60)
                     }
@@ -311,7 +306,7 @@ private fun TunerScreen(
             }
         }
         onDispose {
-            scope.launch { monitor.stop() }
+            lifecycleScope.launch { monitor.stop() }
         }
     }
 
@@ -336,7 +331,7 @@ private fun TunerScreen(
     val signalPercent = PitchDetector.amplitudePercent(pitchResult)
     val animatedNeedle by animateFloatAsState(
         targetValue = needlePosition,
-        animationSpec = spring(stiffness = 80f, dampingRatio = 0.95f),
+        animationSpec = spring(stiffness = 170f, dampingRatio = 1f),
         label = "tuner-needle",
     )
     val statusColor by animateColorAsState(
@@ -1218,6 +1213,7 @@ private fun ToolsSubTabButton(
 private fun ChordRecognizerCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val lifecycleScope = LocalLifecycleOwner.current.lifecycleScope
     val detector = remember { ChordDetector() }
 
     var microphoneGranted by remember {
@@ -1240,7 +1236,7 @@ private fun ChordRecognizerCard() {
             chordResult = null
         }
         onDispose {
-            scope.launch { detector.stop() }
+            lifecycleScope.launch { detector.stop() }
         }
     }
 
@@ -1425,18 +1421,6 @@ private fun SettingsScreen(
     onLeftHandedChanged: (Boolean) -> Unit,
 ) {
     var showAbout by rememberSaveable { mutableStateOf(false) }
-    var showDonationPrompt by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences(DonationPrefsName, Context.MODE_PRIVATE)
-        val lastShownMillis = prefs.getLong(KeyDonationLastShownMillis, 0L)
-        val now = System.currentTimeMillis()
-        if (now - lastShownMillis >= DonationPromptIntervalMillis) {
-            showDonationPrompt = true
-            prefs.edit().putLong(KeyDonationLastShownMillis, now).apply()
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -1474,7 +1458,7 @@ private fun SettingsScreen(
                 Button(modifier = Modifier.fillMaxWidth(), onClick = { showAbout = true }) {
                     Text("About FreeTuner")
                 }
-                Text("The layout is optimized for phones and now looks cleaner for Play Store screenshots.")
+
             }
         }
     }
@@ -1493,35 +1477,7 @@ private fun SettingsScreen(
             },
         )
     }
-
-    if (showDonationPrompt) {
-        AlertDialog(
-            onDismissRequest = { showDonationPrompt = false },
-            title = { Text("Enjoying FreeTuner?") },
-            text = {
-                Text("FreeTuner is free, offline, and ad-free. If it's useful to you, consider supporting development with a small donation.")
-            },
-            confirmButton = {
-                Button(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DonationUrl)))
-                    showDonationPrompt = false
-                }) {
-                    Text("Support on Ko-fi")
-                }
-            },
-            dismissButton = {
-                Button(onClick = { showDonationPrompt = false }) {
-                    Text("Maybe later")
-                }
-            },
-        )
-    }
 }
-
-private const val DonationPrefsName = "freetuner_donation_prefs"
-private const val KeyDonationLastShownMillis = "last_shown_millis"
-private const val DonationPromptIntervalMillis = 30L * 24 * 60 * 60 * 1000
-private const val DonationUrl = "https://ko-fi.com/freetuner"
 
 @Composable
 private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {

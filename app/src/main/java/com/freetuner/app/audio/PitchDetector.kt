@@ -69,15 +69,37 @@ object PitchDetector {
 
         if (bestLag <= 0) return null
 
+        // The global maximum can lock onto a multiple of the true period (e.g. lag 401
+        // for a 440 Hz tone at 22050 Hz, reported as ~55 Hz). Prefer the smallest lag
+        // whose correlation is close to the maximum, then walk up to its local peak so
+        // parabolic refinement lands on the true fundamental.
+        val nearMax = bestCorrelation * 0.98f
+        var fundamentalLag = -1
+        for (lag in minLag..bestLag) {
+            if (correlations[lag - minLag] >= nearMax) {
+                fundamentalLag = lag
+                break
+            }
+        }
+        if (fundamentalLag < 0) return null
+
+        while (fundamentalLag + 1 <= maxLag &&
+            correlations[fundamentalLag + 1 - minLag] > correlations[fundamentalLag - minLag]
+        ) {
+            fundamentalLag++
+        }
+
+        val tauRefined = parabolicInterpolation(correlations, fundamentalLag, minLag)
+        val frequencyHz = sampleRate / tauRefined
+
         val confidence = bestCorrelation.coerceIn(0f, 1f)
         if (confidence < 0.70f) return null
 
-        val frequencyHz = sampleRate / bestLag.toFloat()
         if (!frequencyHz.isFinite() || frequencyHz < minFrequencyHz || frequencyHz > maxFrequencyHz) {
             return null
         }
 
-        if (!validateOctave(frequencyHz, correlations, minLag, sampleRate)) {
+        if (!validateOctave(fundamentalLag, correlations, minLag, sampleRate)) {
             return null
         }
 
@@ -88,12 +110,28 @@ object PitchDetector {
         )
     }
 
+    private fun parabolicInterpolation(correlations: FloatArray, lag: Int, minLag: Int): Float {
+        val index = lag - minLag
+        if (index <= 0 || index >= correlations.size - 1) return lag.toFloat()
+
+        val x0 = correlations[index - 1]
+        val x1 = correlations[index]
+        val x2 = correlations[index + 1]
+
+        val denominator = 2f * (2f * x1 - x0 - x2)
+        if (denominator == 0f) return lag.toFloat()
+
+        val shift = (x2 - x0) / denominator
+        return lag + shift.coerceIn(-0.5f, 0.5f)
+    }
+
     private fun validateOctave(
-        frequency: Float,
+        bestLag: Int,
         correlations: FloatArray,
         minLag: Int,
         sampleRate: Int,
     ): Boolean {
+        val frequency = sampleRate / bestLag.toFloat()
         val octaveFreq = frequency / 2f
         if (octaveFreq < 50f) return true
 
@@ -105,7 +143,10 @@ object PitchDetector {
         val fundamentalCorr = correlations.maxOrNull() ?: 0f
         val octaveCorr = correlations.getOrNull(octaveIdx) ?: 0f
 
-        return fundamentalCorr > octaveCorr * 1.3f
+        // Reject only when the octave-lower period fits strictly better (true octave
+        // error). For a clean tone both lags correlate ~equally, so requiring the
+        // fundamental to beat the octave by a large factor wrongly rejects every signal.
+        return octaveCorr <= fundamentalCorr + 0.005f
     }
 
     fun smoothFrequency(previousHz: Float?, newHz: Float, factor: Float = 0.18f): Float {

@@ -33,7 +33,7 @@ object PyinPitchDetector {
         if (selectedCandidate == null) return null
 
         val confidence = 1f - cumulativeMeanNormalized[selectedCandidate.tau.coerceAtMost(cumulativeMeanNormalized.size - 1)]
-        val frequencyHz = selectedCandidate.frequency
+        val frequencyHz = sampleRate / selectedCandidate.tauRefined
 
         if (!frequencyHz.isFinite() || frequencyHz < minFrequencyHz || frequencyHz > maxFrequencyHz) {
             return null
@@ -156,10 +156,7 @@ object PyinPitchDetector {
         val tau: Int,
         val tauRefined: Float,
         val salience: Float,
-    ) {
-        val frequency: Float
-            get() = 0f
-    }
+    )
 
     fun analyzePolyphony(
         samples: FloatArray,

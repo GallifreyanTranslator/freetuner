@@ -24,15 +24,30 @@ object YinPitchDetector {
         val differenceFunction = computeDifferenceFunction(samples, maxLag)
         val cumulativeMeanNormalized = computeCumulativeMeanNormalized(differenceFunction)
 
-        var tauMin = minLag
+        var tauMin = -1
         for (tau in minLag..maxLag) {
             if (cumulativeMeanNormalized[tau] < threshold) {
                 tauMin = tau
+                // Standard YIN step 4: slide down to the bottom of this dip. Refining on the
+                // descending slope (as before) gave a level-dependent, jittery frequency.
+                while (tauMin + 1 <= maxLag &&
+                    cumulativeMeanNormalized[tauMin + 1] < cumulativeMeanNormalized[tauMin]
+                ) {
+                    tauMin++
+                }
                 break
             }
         }
 
-        if (tauMin > maxLag) return null
+        if (tauMin < 0) {
+            // Nothing under the threshold: fall back to the global minimum instead of
+            // silently reporting the highest searchable frequency.
+            var best = minLag
+            for (tau in minLag..maxLag) {
+                if (cumulativeMeanNormalized[tau] < cumulativeMeanNormalized[best]) best = tau
+            }
+            tauMin = best
+        }
 
         val tauRefined = parabolicInterpolation(cumulativeMeanNormalized, tauMin)
         val frequencyHz = sampleRate / tauRefined
@@ -163,6 +178,9 @@ object YinPitchDetector {
         factor: Float = 0.3f,
     ): Float {
         if (previousHz == null || previousHz <= 0f) return newHz
+
+        // A jump of more than ~a semitone is a new note, not drift: follow it immediately.
+        if (abs(newHz - previousHz) / previousHz > 0.06f) return newHz
 
         val adaptiveFactor = if (vibratoDetected) {
             factor * 0.5f

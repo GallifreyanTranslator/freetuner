@@ -17,8 +17,9 @@ import kotlinx.coroutines.withContext
 
 class AdvancedMicrophonePitchMonitor(
     private val sampleRate: Int = 44100,
-    private val algorithm: PitchDetectionAlgorithm = PitchDetectionAlgorithm.PHASE2_YIN,
+    algorithm: PitchDetectionAlgorithm = PitchDetectionAlgorithm.PHASE2_YIN,
 ) {
+    private var algorithm: PitchDetectionAlgorithm = algorithm
     private var recorder: AudioRecord? = null
     private var job: Job? = null
     private var noiseFloor = 0.006f
@@ -63,24 +64,32 @@ class AdvancedMicrophonePitchMonitor(
         audioRecord.startRecording()
 
         job = scope.launch(Dispatchers.Default) {
-            val buffer = ShortArray(4096)
+            val buffer = ShortArray(2048)
+            val samples = FloatArray(2048)
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, buffer.size)
                 if (read <= 0) continue
 
-                val samples = FloatArray(read) { i ->
-                    (buffer[i] / Short.MAX_VALUE.toFloat()) * hannWindow(read, i)
+                for (i in 0 until read) {
+                    // No window: YIN/pYIN compare the signal against a shifted copy of itself,
+                    // and tapering the frame amplitude biases that difference function.
+                    samples[i] = buffer[i] / Short.MAX_VALUE.toFloat()
+                }
+                if (read < samples.size) {
+                    samples.fill(0f, read, samples.size)
                 }
 
                 val rms = sqrt(samples.fold(0f) { acc, value -> acc + value * value } / samples.size)
-                if (rms < noiseFloor * 1.15f) {
+                if (rms < noiseFloor * 1.5f) {
                     silentFrameCount++
                     if (silentFrameCount > 3) {
-                        noiseFloor = (noiseFloor * 0.85f + rms * 0.15f).coerceAtLeast(0.002f)
+                        noiseFloor = (noiseFloor * 0.85f + rms * 0.15f).coerceIn(0.002f, 0.02f)
                     }
                 } else {
+                    // A real signal: do NOT pull the floor up towards it. Previously the floor
+                    // converged to the note's own level and the detector then rejected ~half the
+                    // frames, which made the needle drop out and flicker on sustained notes.
                     silentFrameCount = 0
-                    noiseFloor = (noiseFloor * 0.95f + rms * 0.05f).coerceAtLeast(0.002f)
                 }
 
                 val result = when (algorithm) {
@@ -127,6 +136,7 @@ class AdvancedMicrophonePitchMonitor(
     }
 
     fun switchAlgorithm(newAlgorithm: PitchDetectionAlgorithm) {
+        algorithm = newAlgorithm
         previousFrequency = null
     }
 }

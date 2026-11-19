@@ -55,13 +55,17 @@ class MicrophonePitchMonitor(
         audioRecord.startRecording()
 
         job = scope.launch(Dispatchers.Default) {
-            val buffer = ShortArray(4096)
+            val buffer = ShortArray(2048)
+            val samples = FloatArray(2048)
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, buffer.size)
                 if (read <= 0) continue
 
-                val samples = FloatArray(read) { i ->
-                    (buffer[i] / Short.MAX_VALUE.toFloat()) * hannWindow(read, i)
+                for (i in 0 until read) {
+                    samples[i] = buffer[i] / Short.MAX_VALUE.toFloat()
+                }
+                if (read < samples.size) {
+                    samples.fill(0f, read, samples.size)
                 }
 
                 val rms = sqrt(samples.fold(0f) { acc, value -> acc + value * value } / samples.size)
